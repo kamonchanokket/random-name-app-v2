@@ -1,18 +1,73 @@
-from flask import Flask, render_template_string, request, session, redirect, url_for
-import random
+import streamlit as st
 import gspread
+import random
 import os
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import timedelta
 
-app = Flask(__name__)
-# ตั้งค่า Session ให้จำได้นาน 30 วัน (เพื่อนสุ่มแล้วจะล็อคชื่อนั้นไว้เลย)
-app.secret_key = "nakhon_nayok_na_jai_2026_ultra_secure_v11"
-app.permanent_session_lifetime = timedelta(days=30)
+# --- 1. SETTING & UI STYLE (HTML/CSS) ---
+st.set_page_config(page_title="นครนายก นาใจ 2026", page_icon="🚌", layout="centered")
 
-ADMIN_PASSWORD = "qwertyuiop[]asdfghjkl"
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;800&display=swap');
+    
+    html, body, [class*="st-"] {
+        font-family: 'Kanit', sans-serif;
+        background-color: #020617;
+    }
+    
+    /* สไตล์ Card แก้ว */
+    .main-card {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(20px);
+        border-radius: 2.5rem;
+        padding: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 2rem;
+    }
 
-# ข้อมูลรายชื่อและไซส์เสื้อ 18 คน (Hardcoded ไว้ให้แล้ว)
+    /* ปุ่ม Gradient แบบ Gen Z */
+    .stButton>button {
+        width: 100%;
+        border-radius: 20px;
+        height: 3.5em;
+        background: linear-gradient(135deg, #f97316 0%, #d946ef 100%);
+        color: white;
+        font-weight: 800;
+        font-size: 1.2rem;
+        border: none;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 10px 15px -3px rgba(249, 115, 22, 0.4);
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 20px 25px -5px rgba(249, 115, 22, 0.5);
+        color: white;
+    }
+
+    /* ตกแต่ง Selectbox */
+    .stSelectbox div[data-baseweb="select"] {
+        border-radius: 15px;
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. GOOGLE SHEETS CONNECTION ---
+def get_gs_client():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    # ดึงค่าจาก Streamlit Secrets
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"⚠️ ลืมใส่ Secrets ในหน้า Settings หรือเปล่า?: {e}")
+        return None
+
+# --- 3. DATA & LOGIC ---
 INITIAL_MEMBERS = {
     "นิ๊ค": "40 - 42 นิ้ว", "พี่มิว": "44 - 46 นิ้ว", "เตอร์": "50 - 52 นิ้วมั้ง 3XL",
     "บ๊อบ": "50 - 52 นิ้วมั้ง 3XL", "แมน": "50 - 52 นิ้วมั้ง 3XL", "พิน": "40 - 42 นิ้ว",
@@ -22,238 +77,83 @@ INITIAL_MEMBERS = {
     "ออฟ": "62-64 นิ้ว", "กี้": "40 นิ้ว"
 }
 
-def get_gs_data():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    # ดึงคีย์จากไฟล์ credentials.json (ที่ Render จะจำลองให้จาก Secret Files)
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    client = gspread.authorize(creds)
-    
-    # *** สำคัญ: เปลี่ยนชื่อให้ตรงกับชื่อไฟล์ Google Sheet ของคุณ ***
-    sheet = client.open("random_name") 
-    
-    # ดึงข้อมูลจากแผ่นงาน "Assignments"
-    assign_ws = sheet.worksheet("Assignments")
-    all_rows = assign_ws.get_all_records()
-    assignments = {row['giver']: row['receiver'] for row in all_rows if row.get('receiver')}
-    
-    # ดึงข้อมูลจากแผ่นงาน "Exclusions"
-    ex_ws = sheet.worksheet("Exclusions")
-    exclusions = ex_ws.get_all_values()
-    
-    return sheet, assignments, exclusions
+# --- 4. APP INTERFACE ---
+st.markdown('<h1 style="text-align: center; color: white;">นครนายก <span style="color: #f97316;">นาใจ</span> 2026</h1>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #94a3b8; font-style: italic;">"หาชุดที่ใส่แล้วโลกต้องจำ!"</p>', unsafe_allow_html=True)
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>นครนายก นาใจ 2026</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Kanit', sans-serif; background: radial-gradient(circle at top right, #1e293b, #020617); color: #f8fafc; min-height: 100vh; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .btn-gradient { background: linear-gradient(135deg, #f97316 0%, #d946ef 100%); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .btn-gradient:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(249, 115, 22, 0.5); }
-        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f97316'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 1rem center; background-size: 1.2em; }
-    </style>
-</head>
-<body class="p-4 md:p-8">
-    <div class="max-w-md mx-auto">
-        <header class="text-center mb-10">
-            <h1 class="text-4xl font-extrabold text-white mb-2">นครนายก <span class="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">นาใจ</span></h1>
-            <p class="text-slate-400 text-sm italic">"ความลับที่ถูกล็อคไว้ใน Browser มึงแล้ว"</p>
-        </header>
+# ระบบจำชื่อผู้ใช้ (Session State)
+if 'my_name' not in st.session_state:
+    st.session_state.my_name = None
 
-        <nav class="flex p-1.5 bg-slate-900/50 rounded-2xl border border-white/5 mb-8">
-            <a href="{{ url_for('index') }}" class="flex-1 text-center py-3 rounded-xl text-sm font-semibold transition-all {{ 'bg-white/10 text-white shadow-lg' if page == 'index' else 'text-slate-500' }}">สุ่มหาเหยื่อ</a>
-            <a href="{{ url_for('admin') }}" class="flex-1 text-center py-3 rounded-xl text-sm font-semibold transition-all {{ 'bg-white/10 text-white shadow-lg' if page in ['admin', 'login'] else 'text-slate-500' }}">แอดมิน</a>
-        </nav>
-
-        <main class="glass-card rounded-[2.5rem] p-8 relative">
-            {% if page == 'login' %}
-                <form action="{{ url_for('admin_login') }}" method="POST" class="space-y-4 py-4 text-center">
-                    <i data-lucide="lock" class="text-orange-500 w-12 h-12 mx-auto mb-4"></i>
-                    <h2 class="text-xl font-bold text-white">แอดมินยืนยันตัวตน</h2>
-                    <input type="password" name="pw" placeholder="รหัสผ่าน" class="w-full bg-slate-950/50 border border-slate-700 rounded-2xl py-4 px-6 text-center text-white outline-none focus:ring-2 ring-orange-500/50">
-                    <button type="submit" class="w-full py-4 btn-gradient rounded-2xl font-bold text-white">เข้าสู่ระบบ</button>
-                </form>
-            {% elif page == 'admin' %}
-                <div class="space-y-8">
-                    <section class="text-center p-6 bg-orange-500/10 rounded-3xl border border-orange-500/20">
-                         <p class="text-white text-sm font-light italic">สุ่มไปแล้ว</p>
-                         <p class="text-5xl font-black text-white my-2">{{ assignments|length }} <span class="text-xl text-slate-500">/ {{ names|length }}</span></p>
-                    </section>
-
-                    <section class="p-5 bg-rose-500/5 rounded-3xl border border-rose-500/10">
-                        <h3 class="text-rose-400 text-xs font-bold uppercase mb-4 flex items-center gap-2"><i data-lucide="shield-alert" class="w-4 h-4"></i> ล็อคคู่ห้ามสุ่มโดนกัน</h3>
-                        <form action="{{ url_for('add_exclusion') }}" method="POST" class="space-y-3">
-                            <div class="grid grid-cols-2 gap-2">
-                                <select name="p1" class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white">
-                                    {% for name in names | sort %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-                                </select>
-                                <select name="p2" class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white">
-                                    {% for name in names | sort %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-                                </select>
+with st.container():
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    
+    if not st.session_state.my_name:
+        st.write("👋 **ใครเอ่ย? เลือกชื่อตัวเองก่อนนะ**")
+        selected_user = st.selectbox("", ["-- รายชื่อเพื่อน --"] + sorted(list(INITIAL_MEMBERS.keys())), label_visibility="collapsed")
+        
+        if selected_user != "-- รายชื่อเพื่อน --":
+            if st.button("ยืนยันตัวตน"):
+                st.session_state.my_name = selected_user
+                st.rerun()
+    else:
+        st.success(f"ยินดีต้อนรับคุณ: **{st.session_state.my_name}**")
+        
+        if st.button("🚀 กดสุ่มหาเหยื่อ / ดูผลลัพธ์"):
+            client = get_gs_client()
+            if client:
+                try:
+                    # ชื่อไฟล์ Google Sheets
+                    sheet = client.open("random-name-tracking") 
+                    ws_assign = sheet.worksheet("Assignments")
+                    ws_excl = sheet.worksheet("Exclusions")
+                    
+                    data = ws_assign.get_all_records()
+                    assignments = {row['giver']: row['receiver'] for row in data if row.get('receiver')}
+                    
+                    # ถ้าเคยสุ่มไปแล้ว ให้โชว์ผลเดิม
+                    if st.session_state.my_name in assignments:
+                        target = assignments[st.session_state.my_name]
+                        st.balloons()
+                        st.markdown(f"""
+                            <div style="text-align: center; padding: 2rem; background: rgba(249, 115, 22, 0.1); border-radius: 2rem; border: 2px dashed #f97316;">
+                                <p style="color: #94a3b8;">เหยื่อของคุณคือ...</p>
+                                <h1 style="color: white; font-size: 4rem; margin: 0;">{target}</h1>
+                                <div style="display: inline-block; padding: 0.5rem 1.5rem; background: #f97316; color: white; border-radius: 1rem; font-weight: bold; margin-top: 1rem;">
+                                    Size: {INITIAL_MEMBERS.get(target, '-')}
+                                </div>
                             </div>
-                            <button type="submit" class="w-full bg-rose-600 text-white py-3 rounded-xl text-xs font-bold uppercase">เพิ่มกฎห้ามคู่กัน</button>
-                        </form>
-                        <div class="mt-4 space-y-1">
-                            {% for pair in exclusions %}
-                            <div class="flex justify-between items-center bg-slate-900/50 p-2 rounded-xl text-[10px] text-slate-400">
-                                <span>{{ pair[0] }} ❌ {{ pair[1] }}</span>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </section>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # กรองคนที่ไม่ใช่ตัวเอง และคนที่ยังไม่ถูกเลือก
+                        assigned_receivers = list(assignments.values())
+                        candidates = [n for n in INITIAL_MEMBERS.keys() if n != st.session_state.my_name and n not in assigned_receivers]
+                        
+                        # กรอง Exclusion Rules (คู่ห้าม)
+                        exclusions = ws_excl.get_all_values()
+                        for pair in exclusions:
+                            if len(pair) >= 2:
+                                p1, p2 = pair[0], pair[1]
+                                if st.session_state.my_name == p1 and p2 in candidates: candidates.remove(p2)
+                                if st.session_state.my_name == p2 and p1 in candidates: candidates.remove(p1)
 
-                    <footer class="pt-6 border-t border-white/10 text-center">
-                        <a href="{{ url_for('logout_admin') }}" class="text-slate-500 text-[10px] uppercase underline">LOGOUT ADMIN</a>
-                    </footer>
-                </div>
-            {% else %}
-                <div class="text-center py-4 space-y-8">
-                    {% if locked_user %}
-                        <div class="space-y-6">
-                            <div class="p-6 bg-orange-500/10 rounded-3xl border border-orange-500/20">
-                                <p class="text-slate-400 text-xs uppercase tracking-widest mb-1">ยินดีต้อนรับกลับมา</p>
-                                <p class="text-2xl font-bold text-white">{{ locked_user }}</p>
-                            </div>
-                            <form action="{{ url_for('draw') }}" method="POST">
-                                <input type="hidden" name="user_name" value="{{ locked_user }}">
-                                <button type="submit" class="w-full py-6 rounded-3xl font-black text-2xl btn-gradient text-white shadow-2xl italic animate-pulse">กดดูเหยื่อของฉัน</button>
-                            </form>
-                            <a href="{{ url_for('clear_my_session') }}" class="text-[10px] text-slate-600 underline block mt-4">ไม่ใช่ฉัน? (ล้างข้อมูลเครื่องนี้)</a>
-                        </div>
-                    {% else %}
-                        <form action="{{ url_for('draw') }}" method="POST" class="space-y-6">
-                            <div class="space-y-4">
-                                <label class="block text-xs font-bold text-orange-400 uppercase tracking-widest">เลือกชื่อของตัวเองเพื่อเริ่มสุ่ม</label>
-                                <select name="user_name" class="w-full bg-slate-950 border border-slate-800 rounded-3xl p-6 text-xl font-bold text-white text-center outline-none focus:ring-2 ring-orange-500/50" required>
-                                    <option value="">-- ใครเอ่ย? --</option>
-                                    {% for name in names | sort %}
-                                        <option value="{{ name }}">{{ name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <button type="submit" class="w-full py-6 rounded-3xl font-black text-2xl btn-gradient text-white shadow-2xl">ยืนยันตัวตนแล้วสุ่ม!</button>
-                        </form>
-                    {% endif %}
-                </div>
-            {% endif %}
-        </main>
-    </div>
+                        if not candidates:
+                            st.error("❌ ไม่มีใครเหลือให้คุณสุ่มแล้ว!")
+                        else:
+                            target = random.choice(candidates)
+                            # บันทึกลง Google Sheets (หาช่องที่ชื่อเราอยู่ แล้วบันทึก Target ลงคอลัมน์ 2)
+                            cell = ws_assign.find(st.session_state.my_name)
+                            ws_assign.update_cell(cell.row, 2, target)
+                            st.rerun() # รีหน้าเพื่อให้มันโชว์ผลลัพธ์จาก Block ข้างบน
+                            
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-    {% if result %}
-    <div class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl">
-        <div class="glass-card w-full max-w-sm p-10 rounded-[3rem] border-2 border-orange-500/50 text-center space-y-8 animate-in fade-in zoom-in duration-300">
-            <p class="text-slate-400 text-xs italic">เหยื่อที่ {{ user_name }} ต้องไปแกงคือ...</p>
-            <div>
-                <h2 class="text-6xl font-black text-white tracking-tighter">{{ result }}</h2>
-                <div class="mt-4 px-6 py-2 bg-orange-500 text-white rounded-full font-bold text-lg inline-block">Size: {{ result_size }}</div>
-            </div>
-            <p class="text-slate-300 text-xs leading-relaxed italic">หาชุดที่ใส่แล้วโลกต้องจำ! ไซส์เสื้ออยู่ข้างบนแล้ว อย่าอ้างว่าซื้อผิดไซส์นะจ๊ะ 🤖✨</p>
-            <button onclick="window.location='{{ url_for('index') }}'" class="w-full py-4 bg-slate-800 hover:bg-slate-700 rounded-2xl text-white text-xs font-bold uppercase tracking-widest">ปิดความลับนี้ไว้</button>
-        </div>
-    </div>
-    {% endif %}
-    <script>lucide.createIcons();</script>
-</body>
-</html>
-"""
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("ไม่ใช่ฉัน? (ล้างข้อมูลเครื่องนี้)", type="secondary"):
+            st.session_state.my_name = None
+            st.rerun()
 
-@app.route("/")
-def index():
-    locked_user = session.get("my_name")
-    return render_template_string(HTML_TEMPLATE, names=list(INITIAL_MEMBERS.keys()), page='index', locked_user=locked_user)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-@app.route("/draw", methods=["POST"])
-def draw():
-    user = request.form.get("user_name")
-    if not user: return redirect(url_for("index"))
-    
-    # ล็อค Session ทันที (ให้จำชื่อนี้ไว้ 30 วัน)
-    session.permanent = True
-    session["my_name"] = user
-    
-    try:
-        sheet, assignments, exclusions = get_gs_data()
-    except Exception as e:
-        return f"เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: {e}"
-    
-    # ถ้าเคยสุ่มไปแล้ว ให้ดึงผลเดิมจาก Google Sheet มาโชว์เสมอ
-    if user in assignments:
-        target = assignments[user]
-        return render_template_string(HTML_TEMPLATE, names=list(INITIAL_MEMBERS.keys()), page='index', result=target, result_size=INITIAL_MEMBERS.get(target, "ไม่ระบุ"), user_name=user)
-
-    # กรองคนที่ถูกเลือกไปแล้ว
-    assigned_receivers = list(assignments.values())
-    candidates = [n for n in INITIAL_MEMBERS.keys() if n != user and n not in assigned_receivers]
-    
-    # กรองคู่ห้ามสุ่มโดนกันจาก Sheet Exclusions
-    for pair in exclusions:
-        if len(pair) >= 2:
-            p1, p2 = pair[0], pair[1]
-            if user == p1 and p2 in candidates: candidates.remove(p2)
-            if user == p2 and p1 in candidates: candidates.remove(p1)
-
-    if not candidates:
-        return "<script>alert('ไม่มีใครเหลือให้สุ่มแล้ว หรือติดกฎคู่ห้าม! โปรดติดต่อแอดมิน'); window.location='/';</script>"
-
-    target = random.choice(candidates)
-    
-    # บันทึกคู่สุ่มลง Google Sheets (Assignments) ทันที
-    assign_ws = sheet.worksheet("Assignments")
-    try:
-        cell = assign_ws.find(user)
-        assign_ws.update_cell(cell.row, 2, target)
-    except:
-        return "Error: ไม่พบชื่อของคุณใน Google Sheets คอลัมน์ A (giver)"
-
-    return render_template_string(HTML_TEMPLATE, names=list(INITIAL_MEMBERS.keys()), page='index', result=target, result_size=INITIAL_MEMBERS.get(target, "ไม่ระบุ"), user_name=user)
-
-@app.route("/admin")
-def admin():
-    if not session.get("is_admin"): return render_template_string(HTML_TEMPLATE, page='login')
-    try:
-        _, assignments, exclusions = get_gs_data()
-    except:
-        assignments, exclusions = {}, []
-    return render_template_string(HTML_TEMPLATE, names=list(INITIAL_MEMBERS.keys()), sizes=INITIAL_MEMBERS, assignments=assignments, exclusions=exclusions, page='admin')
-
-@app.route("/admin_login", methods=["POST"])
-def admin_login():
-    if request.form.get("pw") == ADMIN_PASSWORD:
-        session["is_admin"] = True
-        return redirect(url_for("admin"))
-    return "<script>alert('รหัสผิด!'); window.location='/admin';</script>"
-
-@app.route("/logout_admin")
-def logout_admin():
-    session.pop("is_admin", None)
-    return redirect(url_for("index"))
-
-@app.route("/clear_my_session")
-def clear_my_session():
-    # สำหรับให้เพื่อนล้างชื่อตัวเอง ถ้าเข้าผิดชื่อ
-    session.pop("my_name", None)
-    return redirect(url_for("index"))
-
-@app.route("/add_exclusion", methods=["POST"])
-def add_exclusion():
-    if not session.get("is_admin"): return redirect(url_for("admin"))
-    p1, p2 = request.form.get("p1"), request.form.get("p2")
-    if p1 == p2: return "<script>alert('ชื่อซ้ำกันไม่ได้!'); window.location='/admin';</script>"
-    
-    try:
-        sheet, _, _ = get_gs_data()
-        ex_ws = sheet.worksheet("Exclusions")
-        ex_ws.append_row([p1, p2])
-    except:
-        pass
-    return redirect(url_for("admin"))
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+st.markdown('<p style="text-align: center; color: #475569; font-size: 0.7rem;">BUILD WITH ❤️ FOR NAKHON NAYOK 2026</p>', unsafe_allow_html=True)

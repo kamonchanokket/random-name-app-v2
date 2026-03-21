@@ -59,12 +59,15 @@ st.markdown("""
 def get_gs_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # ดึงค่าแยกทีละตัวจาก Secrets
+        # ประกอบร่าง Private Key ใหม่ใน Python เพื่อป้องกัน Error จากการ Copy
+        raw_key = st.secrets["private_key_raw"]
+        formatted_key = f"-----BEGIN PRIVATE KEY-----\n{raw_key}\n-----END PRIVATE KEY-----\n"
+        
         info = {
             "type": st.secrets["type"],
             "project_id": st.secrets["project_id"],
             "private_key_id": st.secrets["private_key_id"],
-            "private_key": st.secrets["private_key"].replace('\\n', '\n'), # หัวใจสำคัญคือตรงนี้!
+            "private_key": formatted_key, 
             "client_email": st.secrets["client_email"],
             "client_id": st.secrets["client_id"],
             "auth_uri": st.secrets["auth_uri"],
@@ -75,7 +78,7 @@ def get_gs_client():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {e}")
+        st.error(f"Error connecting: {e}")
         return None
 
 # --- 3. DATA & LOGIC ---

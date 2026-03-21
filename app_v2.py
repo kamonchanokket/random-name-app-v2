@@ -1,15 +1,9 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
-import time
+import requests
 
-# --- 1. CONFIG & INITIAL DATA (รายชื่อ 18 คนและไซส์เสื้อ ห้ามลบ!) ---
-# ใส่ URL ของ Google Sheet ที่แชร์แบบ "Anyone with the link can Edit" ตรงนี้
-SHEET_URL = "https://docs.google.com/spreadsheets/d/16ehsojCaRyoD81BFOBqOIGKPpZzTp8oRAOy8cqmG1DI/edit#gid=0"
-ADMIN_PASSWORD = "qwertyuiop[]asdfghjkl"
-
-# ข้อมูลตั้งต้นที่อยู่ในระบบ (ไม่ต้องคีย์ใหม่)
+# --- 1. ข้อมูลรายชื่อและไซส์เสื้อ 18 คน (ห้ามหาย!) ---
 INITIAL_MEMBERS = {
     "นิ๊ค": "40 - 42 นิ้ว", "พี่มิว": "44 - 46 นิ้ว", "เตอร์": "50 - 52 นิ้วมั้ง 3XL",
     "บ๊อบ": "50 - 52 นิ้วมั้ง 3XL", "แมน": "50 - 52 นิ้วมั้ง 3XL", "พิน": "40 - 42 นิ้ว",
@@ -19,158 +13,66 @@ INITIAL_MEMBERS = {
     "ออฟ": "62-64 นิ้ว", "กี้": "40 นิ้ว"
 }
 
-# --- 2. UI STYLE (Modern Glassmorphism) ---
-st.set_page_config(page_title="นครนายก นาใจ 2026", page_icon="🚌", layout="centered")
+# --- 2. CONFIG การเชื่อมต่อ (ใช้แค่ URL) ---
+# 1. URL ของ Sheet ที่กด Publish to web เป็น CSV (สำหรับอ่าน)
+CSV_URL = "https://docs.google.com/spreadsheets/d/16ehsojCaRyoD81BFOBqOIGKPpZzTp8oRAOy8cqmG1DI/export?format=csv&gid=0"
+# 2. URL ของ Apps Script ที่ได้จากขั้นตอนข้างบน (สำหรับเขียน)
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxGIhUZBMzo3-hcPf5FX8oCs8i4wCLeYgwd1-XVCQx9AwkGjUn6B1OjZMS3YVyHODLH/exec"
+
+# --- 3. UI STYLE (Modern Gen Y-Z) ---
+st.set_page_config(page_title="นครนายก นาใจ 2026", page_icon="🚌")
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;800&display=swap');
     html, body, [class*="st-"] { font-family: 'Kanit', sans-serif; background-color: #020617; color: white; }
     .stApp { background: radial-gradient(circle at top right, #1e293b, #020617); }
-    .glass-card {
-        background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px);
-        border-radius: 2rem; padding: 2.5rem; border: 1px solid rgba(255, 255, 255, 0.1);
-        margin-bottom: 2rem;
-    }
-    .stButton>button {
-        width: 100%; border-radius: 15px; height: 3.5em;
-        background: linear-gradient(90deg, #f97316, #d946ef);
-        color: white !important; font-weight: 800; border: none;
-    }
-    .status-badge { background: #f97316; padding: 5px 15px; border-radius: 10px; font-weight: bold; }
+    .glass-card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border-radius: 20px; padding: 25px; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .stButton>button { background: linear-gradient(90deg, #f97316, #d946ef); color: white; font-weight: 800; border-radius: 15px; border: none; height: 3.5em; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. CONNECTION & DATA FETCHING ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def get_all_data():
+# --- 4. LOGIC อ่าน/เขียน ---
+def get_current_assignments():
     try:
-        # อ่านข้อมูลจาก Tab 'Assignments' และ 'Exclusions' ตามที่คุณมี
-        df_assign = conn.read(spreadsheet=SHEET_URL, worksheet="Assignments")
-        df_excl = conn.read(spreadsheet=SHEET_URL, worksheet="Exclusions")
-        return df_assign, df_excl
+        # อ่านข้อมูลจาก Sheet ตรงๆ ไม่ใช้ Key
+        df = pd.read_csv(CSV_URL)
+        return dict(zip(df['Giver'], df['Receiver']))
     except:
-        # กรณี Sheet ยังว่างเปล่าให้สร้าง DataFrame เปล่าที่มีหัวตารางตามที่คุณกำหนด
-        return pd.DataFrame(columns=['Giver', 'Receiver']), pd.DataFrame(columns=['P1', 'P2'])
+        return {}
 
-df_assign, df_excl = get_all_data()
+def save_to_sheet(giver, receiver):
+    # ส่งข้อมูลไปที่ Apps Script (ง่ายเหมือนเปิดเว็บ)
+    requests.get(f"{SCRIPT_URL}?giver={giver}&receiver={receiver}")
 
-# แปลงข้อมูลจาก Sheet เป็น Dictionary และ List เพื่อใช้ใน Logic
-current_assignments = dict(zip(df_assign['Giver'].dropna(), df_assign['Receiver'].dropna()))
-exclusion_pairs = list(zip(df_excl['P1'].dropna(), df_excl['P2'].dropna()))
+# --- 5. MAIN APP ---
+st.title("🚌 นครนายก นาใจ 2026")
+assignments = get_current_assignments()
 
-# --- 4. MAIN APP LOGIC ---
-st.markdown('<h1 style="text-align: center; background: linear-gradient(to right, #f97316, #d946ef); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 3.5rem; font-weight: 800; margin-bottom:1rem;">นครนายก นาใจ</h1>', unsafe_allow_html=True)
+st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+user = st.selectbox("คุณคือใคร? (เลือกชื่อตัวเอง)", ["-- เลือกชื่อ --"] + sorted(list(INITIAL_MEMBERS.keys())))
 
-tab1, tab2 = st.tabs(["🎯 สุ่มเหยื่อ", "🔑 แอดมินจัดการ"])
-
-# --- TAB 1: หน้าสำหรับสมาชิกสุ่มเหยื่อ ---
-with tab1:
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    if 'my_user' not in st.session_state:
-        st.subheader("🚌 ยืนยันตัวตนก่อนสุ่ม")
-        all_names = sorted(list(INITIAL_MEMBERS.keys()))
-        u_name = st.selectbox("เลือกชื่อของคุณ", ["-- เลือกชื่อ --"] + all_names)
-        if u_name != "-- เลือกชื่อ --" and st.button("เข้าสู่ระบบ"):
-            st.session_state.my_user = u_name
-            st.rerun()
+if user != "-- เลือกชื่อ --":
+    if user in assignments:
+        target = assignments[user]
+        st.balloons()
+        st.success(f"สุ่มได้: {target}")
+        st.info(f"ไซส์เสื้อ: {INITIAL_MEMBERS.get(target)}")
     else:
-        me = st.session_state.my_user
-        st.write(f"สวัสดีคุณ: **{me}**")
-        
-        # ล็อกผล: ถ้าใน Google Sheet มีชื่อเราเป็น Giver แล้ว ให้แสดงผลเดิมทันที
-        if me in current_assignments:
-            target = current_assignments[me]
-            st.balloons()
-            st.markdown(f"""
-                <div style="text-align: center; padding: 2rem; border: 2px solid #f97316; border-radius: 20px; background: rgba(249,115,22,0.1);">
-                    <p style="color: #94a3b8; margin:0;">เหยื่อของคุณคือ...</p>
-                    <h1 style="font-size: 4.5rem; color: white; margin: 10px 0;">{target}</h1>
-                    <div style="margin-top:10px;"><span class="status-badge">SIZE: {INITIAL_MEMBERS.get(target)}</span></div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.info("🔒 ผลการสุ่มถูกบันทึกใน Google Sheet แล้ว ไม่สามารถเปลี่ยนได้")
-        else:
-            if st.button("🔥 เริ่มสุ่มเหยื่อ!"):
-                # รายชื่อคนที่ถูกสุ่มไปแล้ว
-                assigned_receivers = list(current_assignments.values())
-                # รายชื่อคนที่มีสิทธิ์ถูกสุ่ม (ไม่ใช่ตัวเอง และยังไม่ถูกใครสุ่ม)
-                candidates = [n for n in INITIAL_MEMBERS.keys() if n != me and n not in assigned_receivers]
-                
-                # Anti-Fan Logic (กรองคู่ห้ามสุ่มเจอกันจาก Tab Exclusions)
-                for p1, p2 in exclusion_pairs:
-                    if me == p1 and p2 in candidates: candidates.remove(p2)
-                    if me == p2 and p1 in candidates: candidates.remove(p1)
-                
-                if not candidates:
-                    st.error("ไม่เหลือใครให้คุณสุ่มแล้ว หรืออาจติดกฎคู่ห้าม กรุณาติดต่อแอดมิน")
-                else:
-                    with st.spinner('กำลังเฟ้นหาเหยื่อ...'):
-                        time.sleep(1.5)
-                        target = random.choice(candidates)
-                        # บันทึกผลลง Google Sheet ทันที
-                        new_data = pd.DataFrame([{"Giver": me, "Receiver": target}])
-                        updated_assign = pd.concat([df_assign, new_data], ignore_index=True)
-                        conn.update(spreadsheet=SHEET_URL, worksheet="Assignments", data=updated_assign)
-                        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# --- TAB 2: หน้าสำหรับแอดมินจัดการระบบ ---
-with tab2:
-    admin_pw = st.text_input("กรอกรหัสผ่านแอดมิน", type="password")
-    if admin_pw == ADMIN_PASSWORD:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        
-        # 1. แสดงสรุปผลการสุ่ม (Summary)
-        st.subheader("📊 สรุปความคืบหน้า")
-        col1, col2 = st.columns(2)
-        col1.metric("สุ่มไปแล้ว", f"{len(current_assignments)} คน")
-        col2.metric("คงเหลือ", f"{len(INITIAL_MEMBERS) - len(current_assignments)} คน")
-        
-        st.write("**ตารางรายชื่อผู้ที่สุ่มแล้ว:**")
-        st.dataframe(df_assign, use_container_width=True)
-
-        # 2. จัดการคู่ห้าม (Exclusions)
-        st.write("---")
-        st.subheader("❌ ตั้งค่าคู่ห้าม (Anti-Fan)")
-        all_m = sorted(list(INITIAL_MEMBERS.keys()))
-        c1, c2 = st.columns(2)
-        p1_ex = c1.selectbox("คนแรก", all_m, key="p1_admin")
-        p2_ex = c2.selectbox("คนที่สอง", all_m, key="p2_admin")
-        
-        if st.button("บันทึกคู่ห้ามลง Google Sheet"):
-            if p1_ex != p2_ex:
-                new_exclusion = pd.DataFrame([{"P1": p1_ex, "P2": p2_ex}])
-                updated_excl = pd.concat([df_excl, new_exclusion], ignore_index=True)
-                conn.update(spreadsheet=SHEET_URL, worksheet="Exclusions", data=updated_excl)
-                st.success(f"บันทึกกฎ: {p1_ex} ห้ามคู่กับ {p2_ex} แล้ว!")
+        if st.button("🚀 เริ่มสุ่มเหยื่อ!"):
+            assigned = list(assignments.values())
+            candidates = [n for n in INITIAL_MEMBERS.keys() if n != user and n not in assigned]
+            
+            if candidates:
+                res = random.choice(candidates)
+                save_to_sheet(user, res)
                 st.rerun()
             else:
-                st.warning("กรุณาเลือกชื่อที่ต่างกัน")
+                st.error("ไม่มีชื่อเหลือให้สุ่มแล้ว!")
+st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3. เพิ่มสมาชิกใหม่ (นอกเหนือจาก 18 คนหลัก)
-        st.write("---")
-        st.subheader("➕ เพิ่มสมาชิกใหม่/แก้ไขไซส์")
-        new_name = st.text_input("ชื่อเล่น")
-        new_size = st.text_input("ไซส์เสื้อ")
-        if st.button("เพิ่มเพื่อนเข้ากองสุ่ม"):
-            if new_name:
-                INITIAL_MEMBERS[new_name] = new_size
-                st.success(f"เพิ่มคุณ {new_name} เรียบร้อย (ข้อมูลจะอยู่เฉพาะในรอบการใช้งานนี้)")
-        
-        # 4. ปุ่มล้างข้อมูลการสุ่ม (Reset)
-        st.write("---")
-        if st.button("🚨 ล้างข้อมูลการสุ่มทั้งหมด (Reset Assignments)", type="primary"):
-            # ลบข้อมูลใน Tab Assignments ให้เหลือแต่หัวตาราง
-            reset_df = pd.DataFrame(columns=['Giver', 'Receiver'])
-            conn.update(spreadsheet=SHEET_URL, worksheet="Assignments", data=reset_df)
-            st.warning("ล้างข้อมูลการสุ่มใน Google Sheet เรียบร้อยแล้ว")
-            st.rerun()
-            
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ปุ่ม Logout สำหรับสมาชิก
-if 'my_user' in st.session_state:
-    if st.sidebar.button("ออกจากระบบผู้ใช้"):
-        st.session_state.clear()
-        st.rerun()
+# --- แอดมินจัดการหลังบ้าน ---
+with st.expander("🔑 สำหรับแอดมิน"):
+    pw = st.text_input("รหัสผ่าน", type="password")
+    if pw == "qwertyuiop[]asdfghjkl":
+        st.write("ตารางสรุปผล:")
+        st.table(pd.DataFrame([{"ผู้สุ่ม": k, "เหยื่อ": v} for k, v in assignments.items()]))
